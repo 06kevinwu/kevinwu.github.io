@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>格鬥遊戲數位邏輯 - 期末專題演示 (報告還原版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #111827; }
+        
+        /* 捲軸美化 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1F2937; }
+        ::-webkit-scrollbar-thumb { background: #4B5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6B7280; }
+
+        /* SVG 電路樣式 */
+        .svg-circuit { user-select: none; background-color: #1F2937; border-radius: 8px; }
+        .wire { fill: none; stroke: #4B5563; stroke-width: 2; transition: all 0.2s; }
+        .wire.active { stroke: #34D399; stroke-width: 3; filter: drop-shadow(0 0 3px #34D399); }
+        .dot { fill: #4B5563; transition: fill 0.2s; }
+        .dot.active { fill: #34D399; }
+        .gate-body { fill: #111827; stroke: #6B7280; stroke-width: 2; transition: all 0.2s; }
+        .gate-body.active { fill: #064E3B; stroke: #34D399; }
+        .led { fill: #374151; stroke: #1F2937; stroke-width: 3; transition: all 0.3s; }
+        .led.active { fill: #EF4444; stroke: #991B1B; filter: drop-shadow(0 0 10px #EF4444); }
+        .label { fill: #9CA3AF; font-family: monospace; font-size: 14px; font-weight: bold; pointer-events: none; }
+        .bus-label { font-size: 14px; font-weight: bold; fill: #60A5FA; }
+        .bus-label-inv { font-size: 14px; font-weight: bold; fill: #F87171; }
+
+        /* 分頁按鈕 */
+        .tab-btn { @apply px-4 py-2 rounded-t-lg font-bold text-gray-400 bg-gray-800 border-b-2 border-transparent hover:text-white transition-all text-sm md:text-base; }
+        .tab-btn.active { @apply text-blue-400 bg-gray-700 border-blue-500; }
+
+        /* 真值表樣式 (參考報告 Page 5, 6) */
+        .truth-table-container { max-height: 400px; overflow-y: auto; border: 1px solid #374151; border-radius: 8px; }
+        .truth-table { width: 100%; text-align: center; border-collapse: collapse; font-size: 0.85rem; }
+        .truth-table th { background-color: #374151; color: #E5E7EB; position: sticky; top: 0; padding: 8px; z-index: 10; }
+        .truth-table td { border-bottom: 1px solid #374151; padding: 6px; color: #D1D5DB; font-family: monospace; }
+        .truth-table tr:hover { background-color: #1F2937; }
+        .truth-table .highlight-row { background-color: #064E3B; color: #FFF; }
+        
+        /* 卡諾圖樣式 (參考報告 Page 7, 8) */
+        .kmap-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .kmap-title { color: #60A5FA; font-weight: bold; margin-bottom: 4px; }
+        .k-map-grid { display: grid; grid-template-columns: 30px repeat(4, 1fr); gap: 1px; background-color: #4B5563; border: 1px solid #4B5563; width: 100%; max-width: 250px; }
+        .k-cell, .k-header-row, .k-header-col { background-color: #1F2937; padding: 6px; text-align: center; color: #9CA3AF; font-family: monospace; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
+        .k-header-corner { background-color: #374151; font-size: 0.6rem; color: #E5E7EB; grid-column: 1 / 2; }
+        .k-header-row { background-color: #374151; color: #E5E7EB; font-weight: bold; }
+        .k-cell.active-cell { background-color: #059669; color: white; font-weight: bold; border: 1px solid #34D399; }
+        
+        /* 標示報告引用 */
+        .report-ref { font-size: 0.7rem; color: #6B7280; margin-top: 2px; }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col items-center p-2">
+
+    <header class="text-center mb-2 w-full">
+        <h1 class="text-2xl font-bold text-blue-400">格鬥遊戲數位邏輯專題</h1>
+        <p class="text-xs text-gray-500">Based on Final Project Report</p>
+    </header>
+
+    <div class="flex gap-1 mb-2 w-full max-w-6xl border-b border-gray-700 overflow-x-auto">
+        <button onclick="switchTab('simulator')" id="tab-btn-simulator" class="tab-btn active whitespace-nowrap">⚡️ 互動電路圖</button>
+        <button onclick="switchTab('tables')" id="tab-btn-tables" class="tab-btn whitespace-nowrap">📊 真值表 & 卡諾圖</button>
+        <button onclick="switchTab('theory')" id="tab-btn-theory" class="tab-btn whitespace-nowrap">📝 邏輯方程式</button>
+    </div>
+
+    <div class="w-full max-w-6xl flex-grow relative">
+        
+        <div id="view-simulator" class="flex flex-col gap-2">
+            <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex flex-wrap gap-4 items-center justify-between sticky top-0 z-10 shadow-lg">
+                <div class="flex gap-2 items-center flex-wrap">
+                    <span class="text-gray-400 font-bold text-sm">輸入:</span>
+                    <label class="cursor-pointer bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 flex items-center gap-2"><input type="checkbox" id="sw-A" onchange="updateCircuit()" class="accent-blue-500"><span class="text-yellow-400 font-bold text-sm">A(Air)</span></label>
+                    <label class="cursor-pointer bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 flex items-center gap-2"><input type="checkbox" id="sw-S" onchange="updateCircuit()" class="accent-blue-500"><span class="text-blue-300 font-bold text-sm">S(蹲)</span></label>
+                    <label class="cursor-pointer bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 flex items-center gap-2"><input type="checkbox" id="sw-D" onchange="updateCircuit()" class="accent-blue-500"><span class="text-blue-300 font-bold text-sm">D(右)</span></label>
+                    <label class="cursor-pointer bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 flex items-center gap-2"><input type="checkbox" id="sw-I" onchange="updateCircuit()" class="accent-blue-500"><span class="text-red-300 font-bold text-sm">I(遠)</span></label>
+                    <label class="cursor-pointer bg-gray-700 px-2 py-1 rounded hover:bg-gray-600 flex items-center gap-2"><input type="checkbox" id="sw-L" onchange="updateCircuit()" class="accent-blue-500"><span class="text-red-300 font-bold text-sm">L(重)</span></label>
+                </div>
+                <div class="bg-gray-900 px-3 py-1 rounded border border-gray-600 font-mono text-green-400 font-bold text-lg" id="state-code">00000</div>
+            </div>
+
+            <div class="bg-gray-800 p-1 rounded-lg border border-gray-700 overflow-hidden flex justify-center">
+                <svg width="1000" height="720" viewBox="0 0 1100 720" class="svg-circuit">
+                    <defs>
+                        <path id="shape-and" d="M0,0 L25,0 A20,20 0 0,1 25,40 L0,40 Z" />
+                        <path id="shape-or" d="M0,0 L15,0 Q40,20 15,40 L0,40 Q10,20 0,0 Z" />
+                        <g id="shape-not"><path d="M0,5 L20,20 L0,35 Z" /><circle cx="24" cy="20" r="4" /></g>
+                        <circle id="dot" r="4" />
+                    </defs>
+                    
+                    <g id="bus-group">
+                        <text x="40" y="30" class="bus-label" text-anchor="middle">A</text><path d="M40,40 V700" class="wire" id="bus-A" />
+                        <path d="M40,50 H55" class="wire" id="w-to-notA" /><use href="#dot" x="40" y="50" class="dot" id="d-to-notA" /><use href="#shape-not" x="55" y="30" class="gate-body" id="gate-notA" transform="scale(0.8)" />
+                        <text x="80" y="30" class="bus-label-inv" text-anchor="middle">A'</text><path d="M80,60 V700" class="wire" id="bus-notA" />
+
+                        <text x="110" y="30" class="bus-label" text-anchor="middle">S</text><path d="M110,40 V700" class="wire" id="bus-S" />
+                        <path d="M110,50 H125" class="wire" id="w-to-notS" /><use href="#dot" x="110" y="50" class="dot" id="d-to-notS" /><use href="#shape-not" x="125" y="30" class="gate-body" id="gate-notS" transform="scale(0.8)" />
+                        <text x="150" y="30" class="bus-label-inv" text-anchor="middle">S'</text><path d="M150,60 V700" class="wire" id="bus-notS" />
+
+                        <text x="180" y="30" class="bus-label" text-anchor="middle">D</text><path d="M180,40 V700" class="wire" id="bus-D" />
+                        <path d="M180,50 H195" class="wire" id="w-to-notD" /><use href="#dot" x="180" y="50" class="dot" id="d-to-notD" /><use href="#shape-not" x="195" y="30" class="gate-body" id="gate-notD" transform="scale(0.8)" />
+                        <text x="220" y="30" class="bus-label-inv" text-anchor="middle">D'</text><path d="M220,60 V700" class="wire" id="bus-notD" />
+
+                        <text x="250" y="30" class="bus-label" text-anchor="middle">I</text><path d="M250,40 V700" class="wire" id="bus-I" />
+                        <path d="M250,50 H265" class="wire" id="w-to-notI" /><use href="#dot" x="250" y="50" class="dot" id="d-to-notI" /><use href="#shape-not" x="265" y="30" class="gate-body" id="gate-notI" transform="scale(0.8)" />
+                        <text x="290" y="30" class="bus-label-inv" text-anchor="middle">I'</text><path d="M290,60 V700" class="wire" id="bus-notI" />
+
+                        <text x="320" y="30" class="bus-label" text-anchor="middle">L</text><path d="M320,40 V700" class="wire" id="bus-L" />
+                        <path d="M320,50 H335" class="wire" id="w-to-notL" /><use href="#dot" x="320" y="50" class="dot" id="d-to-notL" /><use href="#shape-not" x="335" y="30" class="gate-body" id="gate-notL" transform="scale(0.8)" />
+                        <text x="360" y="30" class="bus-label-inv" text-anchor="middle">L'</text><path d="M360,60 V700" class="wire" id="bus-notL" />
+                    </g>
+
+                    <g transform="translate(0, 80)">
+                        <text x="950" y="65" class="label" fill="white" font-size="18">Y1</text>
+                        <path d="M80,-20 H560 V55 H600" class="wire w-notA" /><use href="#dot" x="80" y="-20" class="dot w-notA" />
+                        <path d="M150,20 H400" class="wire w-notS" /><use href="#dot" x="150" y="20" class="dot w-notS" /><path d="M220,30 H400" class="wire w-notD" /><use href="#dot" x="220" y="30" class="dot w-notD" /><path d="M250,40 H400" class="wire w-I" /><use href="#dot" x="250" y="40" class="dot w-I" /><path d="M320,50 H400" class="wire w-L" /><use href="#dot" x="320" y="50" class="dot w-L" />
+                        <path d="M400,10 L430,10 A25,25 0 0,1 430,60 L400,60 Z" class="gate-body" id="y1-and1" />
+                        <path d="M150,80 H400" class="wire w-notS" /><use href="#dot" x="150" y="80" class="dot w-notS" /><path d="M180,90 H400" class="wire w-D" /><use href="#dot" x="180" y="90" class="dot w-D" /><path d="M290,100 H400" class="wire w-notI" /><use href="#dot" x="290" y="100" class="dot w-notI" /><path d="M320,110 H400" class="wire w-L" /><use href="#dot" x="320" y="110" class="dot w-L" />
+                        <path d="M400,70 L430,70 A25,25 0 0,1 430,120 L400,120 Z" class="gate-body" id="y1-and2" />
+                        <path d="M430,35 H480 V55 H500" class="wire" id="y1-w1" /><path d="M430,95 H480 V75 H500" class="wire" id="y1-w2" />
+                        <use href="#shape-or" x="500" y="45" class="gate-body" id="y1-or" />
+                        <path d="M540,65 H560 V75 H600" class="wire" id="y1-w-or-out" /><use href="#shape-and" x="600" y="45" class="gate-body" id="y1-final" />
+                        <path d="M625,65 H920" class="wire" id="y1-out" /><circle cx="935" cy="65" r="10" class="led" id="led-y1" />
+                    </g>
+                    <g transform="translate(0, 240)">
+                        <text x="950" y="65" class="label" fill="white" font-size="18">Y2</text>
+                        <path d="M80,-20 H560 V55 H600" class="wire w-notA" /><use href="#dot" x="80" y="-20" class="dot w-notA" />
+                        <path d="M150,20 H400" class="wire w-notS" /><use href="#dot" x="150" y="20" class="dot w-notS" /><path d="M180,30 H400" class="wire w-D" /><use href="#dot" x="180" y="30" class="dot w-D" /><path d="M250,40 H400" class="wire w-I" /><use href="#dot" x="250" y="40" class="dot w-I" /><path d="M320,50 H400" class="wire w-L" /><use href="#dot" x="320" y="50" class="dot w-L" />
+                        <path d="M400,10 L430,10 A25,25 0 0,1 430,60 L400,60 Z" class="gate-body" id="y2-and1" />
+                        <path d="M110,80 H400" class="wire w-S" /><use href="#dot" x="110" y="80" class="dot w-S" /><path d="M180,90 H400" class="wire w-D" /><use href="#dot" x="180" y="90" class="dot w-D" /><path d="M290,100 H400" class="wire w-notI" /><use href="#dot" x="290" y="100" class="dot w-notI" /><path d="M320,110 H400" class="wire w-L" /><use href="#dot" x="320" y="110" class="dot w-L" />
+                        <path d="M400,70 L430,70 A25,25 0 0,1 430,120 L400,120 Z" class="gate-body" id="y2-and2" />
+                        <path d="M430,35 H480 V55 H500" class="wire" id="y2-w1" /><path d="M430,95 H480 V75 H500" class="wire" id="y2-w2" />
+                        <use href="#shape-or" x="500" y="45" class="gate-body" id="y2-or" />
+                        <path d="M540,65 H560 V75 H600" class="wire" id="y2-w-or-out" /><use href="#shape-and" x="600" y="45" class="gate-body" id="y2-final" />
+                        <path d="M625,65 H920" class="wire" id="y2-out" /><circle cx="935" cy="65" r="10" class="led" id="led-y2" />
+                    </g>
+                    <g transform="translate(0, 400)">
+                        <text x="950" y="65" class="label" fill="white" font-size="18">Y3</text>
+                        <path d="M40,20 H400" class="wire w-A" /><use href="#dot" x="40" y="20" class="dot w-A" /><path d="M150,30 H400" class="wire w-notS" /><use href="#dot" x="150" y="30" class="dot w-notS" /><path d="M220,40 H400" class="wire w-notD" /><use href="#dot" x="220" y="40" class="dot w-notD" /><path d="M250,50 H400" class="wire w-I" /><use href="#dot" x="250" y="50" class="dot w-I" /><path d="M360,60 H400" class="wire w-notL" /><use href="#dot" x="360" y="60" class="dot w-notL" />
+                        <path d="M400,10 L430,10 A30,30 0 0,1 430,70 L400,70 Z" class="gate-body" id="y3-and1" />
+                        <path d="M40,80 H400" class="wire w-A" /><use href="#dot" x="40" y="80" class="dot w-A" /><path d="M110,90 H400" class="wire w-S" /><use href="#dot" x="110" y="90" class="dot w-S" /><path d="M180,100 H400" class="wire w-D" /><use href="#dot" x="180" y="100" class="dot w-D" /><path d="M290,110 H400" class="wire w-notI" /><use href="#dot" x="290" y="110" class="dot w-notI" /><path d="M320,120 H400" class="wire w-L" /><use href="#dot" x="320" y="120" class="dot w-L" />
+                        <path d="M400,75 L430,75 A30,30 0 0,1 430,135 L400,135 Z" class="gate-body" id="y3-and2" />
+                        <path d="M430,40 H500 V60 H550" class="wire" id="y3-w1" /><path d="M430,105 H500 V80 H550" class="wire" id="y3-w2" />
+                        <use href="#shape-or" x="550" y="50" class="gate-body" id="y3-or" />
+                        <path d="M590,70 H920" class="wire" id="y3-out" /><circle cx="935" cy="70" r="10" class="led" id="led-y3" />
+                    </g>
+                    <g transform="translate(0, 560)">
+                        <text x="950" y="50" class="label" fill="white" font-size="18">Y4</text>
+                        <path d="M80,20 H400" class="wire w-notA" /><use href="#dot" x="80" y="20" class="dot w-notA" /><path d="M110,30 H400" class="wire w-S" /><use href="#dot" x="110" y="30" class="dot w-S" /><path d="M180,40 H400" class="wire w-D" /><use href="#dot" x="180" y="40" class="dot w-D" /><path d="M250,50 H400" class="wire w-I" /><use href="#dot" x="250" y="50" class="dot w-I" /><path d="M360,60 H400" class="wire w-notL" /><use href="#dot" x="360" y="60" class="dot w-notL" />
+                        <path d="M400,10 L430,10 A30,30 0 0,1 430,70 L400,70 Z" class="gate-body" id="y4-final" />
+                        <path d="M430,40 H920" class="wire" id="y4-out" /><circle cx="935" cy="40" r="10" class="led" id="led-y4" />
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        <div id="view-tables" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+            
+            <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 flex flex-col gap-4">
+                
+                <div>
+                    <h3 class="text-green-400 font-bold mb-2">地面狀態真值表 (A=0)</h3>
+                    <div class="truth-table-container">
+                        <table class="truth-table">
+                            <thead>
+                                <tr><th>Row</th><th>S</th><th>D</th><th>I</th><th>L</th><th>Y1</th><th>Y2</th><th>Y3</th><th>Y4</th><th>觸發分析</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>0-2</td><td>...</td><td>...</td><td>...</td><td>...</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>3</td><td>0</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>觸發技能1</td></tr>
+                                <tr><td>4</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>5</td><td>0</td><td>1</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>觸發技能1</td></tr>
+                                <tr><td>6</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>7</td><td>0</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td>觸發技能2</td></tr>
+                                <tr><td>8-12</td><td>...</td><td>...</td><td>...</td><td>...</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>13</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td>觸發技能2</td></tr>
+                                <tr class="highlight-row"><td>14</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1</td><td>觸發大招</td></tr>
+                                <tr><td>15</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="report-ref">Reference: Report Page 5</p>
+                </div>
+
+                <div>
+                    <h3 class="text-purple-400 font-bold mb-2">空中狀態真值表 (A=1)</h3>
+                    <div class="truth-table-container" style="max-height: 250px;">
+                        <table class="truth-table">
+                            <thead>
+                                <tr><th>Row</th><th>S</th><th>D</th><th>I</th><th>L</th><th>Y1</th><th>Y2</th><th>Y3</th><th>Y4</th><th>觸發分析</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>16-17</td><td>...</td><td>...</td><td>...</td><td>...</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>18</td><td>0</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td><td>1</td><td>0</td><td>觸發技能3</td></tr>
+                                <tr><td>19-28</td><td>...</td><td>...</td><td>...</td><td>...</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                                <tr class="highlight-row"><td>29</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td><td>1</td><td>0</td><td>觸發技能3</td></tr>
+                                <tr><td>30-31</td><td>...</td><td>...</td><td>...</td><td>...</td><td>0</td><td>0</td><td>0</td><td>0</td><td>無</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="report-ref">Reference: Report Page 6</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-xl border border-gray-700">
+                <h3 class="text-blue-400 font-bold mb-4 border-b border-gray-600 pb-2">卡諾圖分析 (K-Maps)</h3>
+                <div class="grid grid-cols-2 gap-6">
+                    
+                    <div class="kmap-wrapper">
+                        <div class="kmap-title">Y1 (技能1)</div>
+                        <div class="k-map-grid">
+                            <div class="k-header-corner">S,D \ I,L</div>
+                            <div class="k-header-row">00</div><div class="k-header-row">01</div><div class="k-header-row">11</div><div class="k-header-row">10</div>
+                            <div class="k-header-col">00</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div><div class="k-cell">0</div>
+                            <div class="k-header-col">01</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">11</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">10</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                        </div>
+                        <p class="report-ref">Ref: Report Page 7</p>
+                    </div>
+
+                    <div class="kmap-wrapper">
+                        <div class="kmap-title">Y2 (技能2)</div>
+                        <div class="k-map-grid">
+                            <div class="k-header-corner">S,D \ I,L</div>
+                            <div class="k-header-row">00</div><div class="k-header-row">01</div><div class="k-header-row">11</div><div class="k-header-row">10</div>
+                            <div class="k-header-col">00</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">01</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div><div class="k-cell">0</div>
+                            <div class="k-header-col">11</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">10</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                        </div>
+                        <p class="report-ref">Ref: Report Page 7</p>
+                    </div>
+
+                    <div class="kmap-wrapper">
+                        <div class="kmap-title">Y3 (空中)</div>
+                        <div class="k-map-grid">
+                            <div class="k-header-corner">S,D \ I,L</div>
+                            <div class="k-header-row">00</div><div class="k-header-row">01</div><div class="k-header-row">11</div><div class="k-header-row">10</div>
+                            <div class="k-header-col">00</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div>
+                            <div class="k-header-col">01</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">11</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">10</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                        </div>
+                        <p class="report-ref">Ref: Report Page 8</p>
+                    </div>
+
+                    <div class="kmap-wrapper">
+                        <div class="kmap-title">Y4 (大招)</div>
+                        <div class="k-map-grid">
+                            <div class="k-header-corner">S,D \ I,L</div>
+                            <div class="k-header-row">00</div><div class="k-header-row">01</div><div class="k-header-row">11</div><div class="k-header-row">10</div>
+                            <div class="k-header-col">00</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">01</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                            <div class="k-header-col">11</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell active-cell">1</div>
+                            <div class="k-header-col">10</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div><div class="k-cell">0</div>
+                        </div>
+                        <p class="report-ref">Ref: Report Page 8</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-theory" class="hidden grid grid-cols-1 gap-4">
+            <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-xl">
+                <h2 class="text-xl font-bold mb-4 text-blue-400 border-b border-gray-600 pb-2">邏輯方程式總覽</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-gray-900 p-3 rounded border border-gray-600">
+                        <h3 class="text-green-400 font-bold mb-1">Y1</h3>
+                        <p class="font-mono text-lg text-gray-200">Y1 = A' • [ (S'•D'•I•L) + (S'•D•I'•L) ]</p>
+                    </div>
+                    <div class="bg-gray-900 p-3 rounded border border-gray-600">
+                        <h3 class="text-green-400 font-bold mb-1">Y2</h3>
+                        <p class="font-mono text-lg text-gray-200">Y2 = A' • [ (S'•D•I•L) + (S•D•I'•L) ]</p>
+                    </div>
+                    <div class="bg-gray-900 p-3 rounded border border-gray-600">
+                        <h3 class="text-purple-400 font-bold mb-1">Y3</h3>
+                        <p class="font-mono text-lg text-gray-200">Y3 = (A•S'•D'•I•L') + (A•S•D•I'•L)</p>
+                    </div>
+                    <div class="bg-gray-900 p-3 rounded border border-gray-600">
+                        <h3 class="text-red-400 font-bold mb-1">Y4</h3>
+                        <p class="font-mono text-lg text-gray-200">Y4 = A' • S • D • I • L'</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            ['simulator', 'tables', 'theory'].forEach(id => {
+                document.getElementById('view-' + id).classList.add('hidden');
+                document.getElementById('tab-btn-' + id).classList.remove('active');
+            });
+            document.getElementById('view-' + tabId).classList.remove('hidden');
+            document.getElementById('tab-btn-' + tabId).classList.add('active');
+            if (tabId === 'simulator') updateCircuit();
+        }
+
+        function setStatus(id, isActive) {
+            const el = document.getElementById(id);
+            if (el) isActive ? el.classList.add('active') : el.classList.remove('active');
+            document.querySelectorAll('.' + id).forEach(item => {
+                isActive ? item.classList.add('active') : item.classList.remove('active');
+            });
+        }
+
+        function updateCircuit() {
+            const A = document.getElementById('sw-A').checked;
+            const S = document.getElementById('sw-S').checked;
+            const D = document.getElementById('sw-D').checked;
+            const I = document.getElementById('sw-I').checked;
+            const L = document.getElementById('sw-L').checked;
+            
+            const notA = !A, notS = !S, notD = !D, notI = !I, notL = !L;
+
+            document.getElementById('state-code').textContent = `${A?1:0}${S?1:0}${D?1:0}${I?1:0}${L?1:0}`;
+
+            setStatus('bus-A', A); setStatus('w-to-notA', A); setStatus('d-to-notA', A); setStatus('gate-notA', A);
+            setStatus('bus-notA', notA); setStatus('w-A', A); setStatus('w-notA', notA);
+
+            setStatus('bus-S', S); setStatus('w-to-notS', S); setStatus('d-to-notS', S); setStatus('gate-notS', S);
+            setStatus('bus-notS', notS); setStatus('w-S', S); setStatus('w-notS', notS);
+
+            setStatus('bus-D', D); setStatus('w-to-notD', D); setStatus('d-to-notD', D); setStatus('gate-notD', D);
+            setStatus('bus-notD', notD); setStatus('w-D', D); setStatus('w-notD', notD);
+
+            setStatus('bus-I', I); setStatus('w-to-notI', I); setStatus('d-to-notI', I); setStatus('gate-notI', I);
+            setStatus('bus-notI', notI); setStatus('w-I', I); setStatus('w-notI', notI);
+
+            setStatus('bus-L', L); setStatus('w-to-notL', L); setStatus('d-to-notL', L); setStatus('gate-notL', L);
+            setStatus('bus-notL', notL); setStatus('w-L', L); setStatus('w-notL', notL);
+
+            // Logic matching report page 4
+            const y1_final = notA && ((notS && notD && I && L) || (notS && D && notI && L));
+            const y2_final = notA && ((notS && D && I && L) || (S && D && notI && L));
+            const y3_final = (A && notS && notD && I && notL) || (A && S && D && notI && L);
+            const y4_final = notA && S && D && I && notL;
+
+            setStatus('y1-and1', notS && notD && I && L); setStatus('y1-and2', notS && D && notI && L);
+            setStatus('y1-or', (notS && notD && I && L) || (notS && D && notI && L));
+            setStatus('y1-final', y1_final); setStatus('y1-out', y1_final); setStatus('led-y1', y1_final);
+
+            setStatus('y2-and1', notS && D && I && L); setStatus('y2-and2', S && D && notI && L);
+            setStatus('y2-or', (notS && D && I && L) || (S && D && notI && L));
+            setStatus('y2-final', y2_final); setStatus('y2-out', y2_final); setStatus('led-y2', y2_final);
+
+            setStatus('y3-and1', A && notS && notD && I && notL); setStatus('y3-and2', A && S && D && notI && L);
+            setStatus('y3-or', y3_final); setStatus('y3-out', y3_final); setStatus('led-y3', y3_final);
+
+            setStatus('y4-final', y4_final); setStatus('y4-out', y4_final); setStatus('led-y4', y4_final);
+        }
+
+        updateCircuit();
+    </script>
+</body>
+</html>
